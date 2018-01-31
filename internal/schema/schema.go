@@ -363,18 +363,14 @@ func parseObjectDecl(l *common.Lexer) *Object {
 			}
 		}
 	}
-	l.ConsumeToken('{')
-	o.Fields = parseFields(l)
-	l.ConsumeToken('}')
+	o.Fields = parseFields("object", o.Name, l)
 	return o
 }
 
 func parseInterfaceDecl(l *common.Lexer) *Interface {
 	i := &Interface{}
 	i.Name = l.ConsumeIdent()
-	l.ConsumeToken('{')
-	i.Fields = parseFields(l)
-	l.ConsumeToken('}')
+	i.Fields = parseFields("interface", i.Name, l)
 	return i
 }
 
@@ -393,11 +389,7 @@ func parseUnionDecl(l *common.Lexer) *Union {
 func parseInputDecl(l *common.Lexer) *InputObject {
 	i := &InputObject{}
 	i.Name = l.ConsumeIdent()
-	l.ConsumeToken('{')
-	for l.Peek() != '}' {
-		i.Values = append(i.Values, common.ParseInputValue(l))
-	}
-	l.ConsumeToken('}')
+	i.Values = common.ParseInputFieldList(i.Name, l)
 	return i
 }
 
@@ -420,14 +412,7 @@ func parseDirectiveDecl(l *common.Lexer) *DirectiveDecl {
 	d := &DirectiveDecl{}
 	l.ConsumeToken('@')
 	d.Name = l.ConsumeIdent()
-	if l.Peek() == '(' {
-		l.ConsumeToken('(')
-		for l.Peek() != ')' {
-			v := common.ParseInputValue(l)
-			d.Args = append(d.Args, v)
-		}
-		l.ConsumeToken(')')
-	}
+	d.Args = common.ParseArgumentDeclList(l)
 	l.ConsumeKeyword("on")
 	for {
 		loc := l.ConsumeIdent()
@@ -440,23 +425,22 @@ func parseDirectiveDecl(l *common.Lexer) *DirectiveDecl {
 	return d
 }
 
-func parseFields(l *common.Lexer) FieldList {
+func parseFields(declType, typeName string, l *common.Lexer) FieldList {
 	var fields FieldList
+	l.ConsumeToken('{')
 	for l.Peek() != '}' {
 		f := &Field{}
 		f.Desc = l.DescComment()
 		f.Name = l.ConsumeIdent()
-		if l.Peek() == '(' {
-			l.ConsumeToken('(')
-			for l.Peek() != ')' {
-				f.Args = append(f.Args, common.ParseInputValue(l))
-			}
-			l.ConsumeToken(')')
-		}
+		f.Args = common.ParseArgumentDeclList(l)
 		l.ConsumeToken(':')
 		f.Type = common.ParseType(l)
 		f.Directives = common.ParseDirectives(l)
 		fields = append(fields, f)
 	}
+	if len(fields) == 0 {
+		l.SyntaxError(fmt.Sprintf(`%s type %q must define one or more fields`, declType, typeName))
+	}
+	l.ConsumeToken('}')
 	return fields
 }
