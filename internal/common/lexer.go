@@ -84,6 +84,10 @@ func (l *Lexer) Consume() {
 	}
 }
 
+func (l *Lexer) PeekIdent() string {
+	return l.sc.TokenText()
+}
+
 func (l *Lexer) ConsumeIdent() string {
 	name := l.sc.TokenText()
 	l.ConsumeToken(scanner.Ident)

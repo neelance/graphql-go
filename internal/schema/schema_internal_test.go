@@ -24,9 +24,9 @@ func TestParseInterfaceDef(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
 			var actual *Interface
-			lex := setup(t, test.definition)
+			s, lex := setup(t, test.definition)
 
-			parse := func() { actual = parseInterfaceDef(lex) }
+			parse := func() { actual = parseInterfaceDef(s, lex) }
 			err := lex.CatchSyntaxError(parse)
 
 			compareErrors(t, test.err, err)
@@ -66,9 +66,9 @@ func TestParseObjectDef(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
 			var actual *Object
-			lex := setup(t, test.definition)
+			s, lex := setup(t, test.definition)
 
-			parse := func() { actual = parseObjectDef(lex) }
+			parse := func() { actual = parseObjectDef(s, lex) }
 			err := lex.CatchSyntaxError(parse)
 
 			compareErrors(t, test.err, err)
@@ -155,11 +155,12 @@ func compareObjects(t *testing.T, expected, actual *Object) {
 	}
 }
 
-func setup(t *testing.T, def string) *common.Lexer {
+func setup(t *testing.T, def string) (*Schema, *common.Lexer) {
 	t.Helper()
 
+	s := New()
 	lex := common.NewLexer(def)
 	lex.Consume()
 
-	return lex
+	return s, lex
 }

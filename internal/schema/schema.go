@@ -41,7 +41,7 @@ type Schema struct {
 	// http://facebook.github.io/graphql/draft/#sec-Type-System.Directives
 	Directives map[string]*DirectiveDecl
 
-	entryPointNames map[string]string
+	entryPointNames map[string]*EntryPoint
 	objects         []*Object
 	unions          []*Union
 	enums           []*Enum
@@ -52,6 +52,12 @@ func (s *Schema) Resolve(name string) common.Type {
 	return s.Types[name]
 }
 
+type EntryPoint struct {
+	Name string
+	Type string
+	Loc  errors.Location
+}
+
 // NamedType represents a type with a name.
 //
 // http://facebook.github.io/graphql/draft/#NamedType
@@ -59,6 +65,7 @@ type NamedType interface {
 	common.Type
 	TypeName() string
 	Description() string
+	Location() errors.Location
 }
 
 // Scalar types represent primitive leaf values (e.g. a string or an integer) in a GraphQL type
@@ -71,6 +78,7 @@ type NamedType interface {
 type Scalar struct {
 	Name string
 	Desc string
+	Loc  errors.Location
 	// TODO: Add a list of directives?
 }
 
@@ -86,6 +94,7 @@ type Object struct {
 	Interfaces []*Interface
 	Fields     FieldList
 	Desc       string
+	Loc        errors.Location
 	// TODO: Add a list of directives?
 
 	interfaceNames []string
@@ -102,6 +111,7 @@ type Interface struct {
 	PossibleTypes []*Object
 	Fields        FieldList // NOTE: the spec refers to this as `FieldsDefinition`.
 	Desc          string
+	Loc           errors.Location
 	// TODO: Add a list of directives?
 }
 
@@ -116,6 +126,7 @@ type Union struct {
 	Name          string
 	PossibleTypes []*Object // NOTE: the spec refers to this as `UnionMemberTypes`.
 	Desc          string
+	Loc           errors.Location
 	// TODO: Add a list of directives?
 
 	typeNames []string
@@ -130,6 +141,7 @@ type Enum struct {
 	Name   string
 	Values []*EnumValue // NOTE: the spec refers to this as `EnumValuesDefinition`.
 	Desc   string
+	Loc    errors.Location
 	// TODO: Add a list of directives?
 }
 
@@ -154,6 +166,7 @@ type InputObject struct {
 	Name   string
 	Desc   string
 	Values common.InputValueList
+	Loc    errors.Location
 	// TODO: Add a list of directives?
 }
 
@@ -187,6 +200,7 @@ func (l FieldList) Names() []string {
 type DirectiveDecl struct {
 	Name string
 	Desc string
+	Loc  errors.Location
 	Locs []string
 	Args common.InputValueList
 }
@@ -219,6 +233,13 @@ func (t *Union) Description() string       { return t.Desc }
 func (t *Enum) Description() string        { return t.Desc }
 func (t *InputObject) Description() string { return t.Desc }
 
+func (t *Scalar) Location() errors.Location      { return t.Loc }
+func (t *Object) Location() errors.Location      { return t.Loc }
+func (t *Interface) Location() errors.Location   { return t.Loc }
+func (t *Union) Location() errors.Location       { return t.Loc }
+func (t *Enum) Location() errors.Location        { return t.Loc }
+func (t *InputObject) Location() errors.Location { return t.Loc }
+
 // Field is a conceptual function which yields values.
 // http://facebook.github.io/graphql/draft/#FieldDefinition
 type Field struct {
@@ -232,7 +253,7 @@ type Field struct {
 // New initializes an instance of Schema.
 func New() *Schema {
 	s := &Schema{
-		entryPointNames: make(map[string]string),
+		entryPointNames: make(map[string]*EntryPoint),
 		Types:           make(map[string]NamedType),
 		Directives:      make(map[string]*DirectiveDecl),
 	}
@@ -270,12 +291,10 @@ func (s *Schema) Parse(schemaString string) error {
 	}
 
 	s.EntryPoints = make(map[string]NamedType)
-	for key, name := range s.entryPointNames {
-		t, ok := s.Types[name]
+	for key, e := range s.entryPointNames {
+		t, ok := s.Types[e.Type]
 		if !ok {
-			if !ok {
-				return errors.Errorf("type %q not found", name)
-			}
+			return errors.Errorf("type %q not found", e.Type)
 		}
 		s.EntryPoints[key] = t
 	}
@@ -398,47 +417,52 @@ func parseSchema(s *Schema, l *common.Lexer) {
 		case "schema":
 			l.ConsumeToken('{')
 			for l.Peek() != '}' {
-				name := l.ConsumeIdent()
+				validateEntryPointName(s, l)
+				ident := l.ConsumeIdentWithLoc()
+				name := ident.Name
 				l.ConsumeToken(':')
 				typ := l.ConsumeIdent()
-				s.entryPointNames[name] = typ
+				entryPoint := &EntryPoint{Name: name, Type: typ, Loc: ident.Loc}
+				s.entryPointNames[name] = entryPoint
 			}
 			l.ConsumeToken('}')
 
 		case "type":
-			obj := parseObjectDef(l)
+			obj := parseObjectDef(s, l)
 			obj.Desc = desc
 			s.Types[obj.Name] = obj
 			s.objects = append(s.objects, obj)
 
 		case "interface":
-			iface := parseInterfaceDef(l)
+			iface := parseInterfaceDef(s, l)
 			iface.Desc = desc
 			s.Types[iface.Name] = iface
-
 		case "union":
-			union := parseUnionDef(l)
+			union := parseUnionDef(s, l)
 			union.Desc = desc
 			s.Types[union.Name] = union
 			s.unions = append(s.unions, union)
 
 		case "enum":
-			enum := parseEnumDef(l)
+			enum := parseEnumDef(s, l)
 			enum.Desc = desc
 			s.Types[enum.Name] = enum
 			s.enums = append(s.enums, enum)
 
 		case "input":
-			input := parseInputDef(l)
+			input := parseInputDef(s, l)
 			input.Desc = desc
 			s.Types[input.Name] = input
 
 		case "scalar":
-			name := l.ConsumeIdent()
-			s.Types[name] = &Scalar{Name: name, Desc: desc}
+			validateTypeName(s, l)
+			ident := l.ConsumeIdentWithLoc()
+			name := ident.Name
+			scalar := &Scalar{Name: name, Desc: desc, Loc: ident.Loc}
+			s.Types[name] = scalar
 
 		case "directive":
-			directive := parseDirectiveDef(l)
+			directive := parseDirectiveDef(s, l)
 			directive.Desc = desc
 			s.Directives[directive.Name] = directive
 
@@ -449,8 +473,10 @@ func parseSchema(s *Schema, l *common.Lexer) {
 	}
 }
 
-func parseObjectDef(l *common.Lexer) *Object {
-	object := &Object{Name: l.ConsumeIdent()}
+func parseObjectDef(s *Schema, l *common.Lexer) *Object {
+	validateTypeName(s, l)
+	ident := l.ConsumeIdentWithLoc()
+	object := &Object{Name: ident.Name, Loc: ident.Loc}
 
 	if l.Peek() == scanner.Ident {
 		l.ConsumeKeyword("implements")
@@ -471,8 +497,10 @@ func parseObjectDef(l *common.Lexer) *Object {
 	return object
 }
 
-func parseInterfaceDef(l *common.Lexer) *Interface {
-	i := &Interface{Name: l.ConsumeIdent()}
+func parseInterfaceDef(s *Schema, l *common.Lexer) *Interface {
+	validateTypeName(s, l)
+	ident := l.ConsumeIdentWithLoc()
+	i := &Interface{Name: ident.Name, Loc: ident.Loc}
 
 	l.ConsumeToken('{')
 	i.Fields = parseFieldsDef(l)
@@ -481,8 +509,10 @@ func parseInterfaceDef(l *common.Lexer) *Interface {
 	return i
 }
 
-func parseUnionDef(l *common.Lexer) *Union {
-	union := &Union{Name: l.ConsumeIdent()}
+func parseUnionDef(s *Schema, l *common.Lexer) *Union {
+	validateTypeName(s, l)
+	ident := l.ConsumeIdentWithLoc()
+	union := &Union{Name: ident.Name, Loc: ident.Loc}
 
 	l.ConsumeToken('=')
 	union.typeNames = []string{l.ConsumeIdent()}
@@ -494,9 +524,10 @@ func parseUnionDef(l *common.Lexer) *Union {
 	return union
 }
 
-func parseInputDef(l *common.Lexer) *InputObject {
-	i := &InputObject{}
-	i.Name = l.ConsumeIdent()
+func parseInputDef(s *Schema, l *common.Lexer) *InputObject {
+	validateTypeName(s, l)
+	ident := l.ConsumeIdentWithLoc()
+	i := &InputObject{Name: ident.Name, Loc: ident.Loc}
 	l.ConsumeToken('{')
 	for l.Peek() != '}' {
 		i.Values = append(i.Values, common.ParseInputValue(l))
@@ -505,8 +536,10 @@ func parseInputDef(l *common.Lexer) *InputObject {
 	return i
 }
 
-func parseEnumDef(l *common.Lexer) *Enum {
-	enum := &Enum{Name: l.ConsumeIdent()}
+func parseEnumDef(s *Schema, l *common.Lexer) *Enum {
+	validateTypeName(s, l)
+	ident := l.ConsumeIdentWithLoc()
+	enum := &Enum{Name: ident.Name, Loc: ident.Loc}
 
 	l.ConsumeToken('{')
 	for l.Peek() != '}' {
@@ -522,9 +555,11 @@ func parseEnumDef(l *common.Lexer) *Enum {
 	return enum
 }
 
-func parseDirectiveDef(l *common.Lexer) *DirectiveDecl {
+func parseDirectiveDef(s *Schema, l *common.Lexer) *DirectiveDecl {
 	l.ConsumeToken('@')
-	d := &DirectiveDecl{Name: l.ConsumeIdent()}
+	validateDirectiveName(s, l)
+	ident := l.ConsumeIdentWithLoc()
+	d := &DirectiveDecl{Name: ident.Name, Loc: ident.Loc}
 
 	if l.Peek() == '(' {
 		l.ConsumeToken('(')
