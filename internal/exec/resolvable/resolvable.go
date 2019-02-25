@@ -13,10 +13,12 @@ import (
 
 type Schema struct {
 	schema.Schema
-	Query        Resolvable
-	Mutation     Resolvable
-	Subscription Resolvable
-	Resolver     reflect.Value
+	Query                Resolvable
+	Mutation             Resolvable
+	Subscription         Resolvable
+	QueryResolver        reflect.Value
+	MutationResolver     reflect.Value
+	SubscriptionResolver reflect.Value
 }
 
 type Resolvable interface {
@@ -60,25 +62,59 @@ func (*Object) isResolvable() {}
 func (*List) isResolvable()   {}
 func (*Scalar) isResolvable() {}
 
+type QueryResolver interface {
+	Query() interface{}
+}
+
+type MutationResolver interface {
+	Mutation() interface{}
+}
+
+type SubscriptionResolver interface {
+	Subscription() interface{}
+}
+
 func ApplyResolver(s *schema.Schema, resolver interface{}) (*Schema, error) {
 	b := newBuilder(s)
 
-	var query, mutation, subscription Resolvable
+	var (
+		query, mutation, subscription                         Resolvable
+		queryResolver, mutationResolver, subscriptionResolver interface{}
+	)
+
+	sqr, isSeparateQueryResolver := resolver.(QueryResolver)
+	if isSeparateQueryResolver {
+		queryResolver = sqr.Query()
+	} else {
+		queryResolver = resolver
+	}
+	smr, isSeparateMutationResolver := resolver.(MutationResolver)
+	if isSeparateMutationResolver {
+		mutationResolver = smr.Mutation()
+	} else {
+		mutationResolver = resolver
+	}
+	ssr, isSeparateSubscriptionResolver := resolver.(SubscriptionResolver)
+	if isSeparateSubscriptionResolver {
+		subscriptionResolver = ssr.Subscription()
+	} else {
+		subscriptionResolver = resolver
+	}
 
 	if t, ok := s.EntryPoints["query"]; ok {
-		if err := b.assignExec(&query, t, reflect.TypeOf(resolver)); err != nil {
+		if err := b.assignExec(&query, t, reflect.TypeOf(queryResolver)); err != nil {
 			return nil, err
 		}
 	}
 
 	if t, ok := s.EntryPoints["mutation"]; ok {
-		if err := b.assignExec(&mutation, t, reflect.TypeOf(resolver)); err != nil {
+		if err := b.assignExec(&mutation, t, reflect.TypeOf(mutationResolver)); err != nil {
 			return nil, err
 		}
 	}
 
 	if t, ok := s.EntryPoints["subscription"]; ok {
-		if err := b.assignExec(&subscription, t, reflect.TypeOf(resolver)); err != nil {
+		if err := b.assignExec(&subscription, t, reflect.TypeOf(subscriptionResolver)); err != nil {
 			return nil, err
 		}
 	}
@@ -88,11 +124,13 @@ func ApplyResolver(s *schema.Schema, resolver interface{}) (*Schema, error) {
 	}
 
 	return &Schema{
-		Schema:       *s,
-		Resolver:     reflect.ValueOf(resolver),
-		Query:        query,
-		Mutation:     mutation,
-		Subscription: subscription,
+		Schema:               *s,
+		QueryResolver:        reflect.ValueOf(queryResolver),
+		MutationResolver:     reflect.ValueOf(mutationResolver),
+		SubscriptionResolver: reflect.ValueOf(subscriptionResolver),
+		Query:                query,
+		Mutation:             mutation,
+		Subscription:         subscription,
 	}, nil
 }
 
@@ -186,7 +224,7 @@ func (b *execBuilder) makeExec(t common.Type, resolverType reflect.Type) (Resolv
 		return e, nil
 
 	default:
-		panic("invalid type: " + t.String())
+		panic("invalid type:" + t.String())
 	}
 }
 
