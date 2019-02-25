@@ -15,6 +15,7 @@ import (
 	"github.com/graph-gophers/graphql-go/internal/query"
 	"github.com/graph-gophers/graphql-go/internal/schema"
 	"github.com/graph-gophers/graphql-go/log"
+	pubselected "github.com/graph-gophers/graphql-go/selected"
 	"github.com/graph-gophers/graphql-go/trace"
 )
 
@@ -160,6 +161,24 @@ func typeOf(tf *selected.TypenameField, resolver reflect.Value) string {
 	return ""
 }
 
+func selectionToSelectedFields(sels []selected.Selection) []pubselected.SelectedField {
+	var selectedFields []pubselected.SelectedField
+	selsLen := len(sels)
+	if selsLen != 0 {
+		selectedFields = make([]pubselected.SelectedField, 0, selsLen)
+		for _, sel := range sels {
+			selField, ok := sel.(*selected.SchemaField)
+			if ok {
+				selectedFields = append(selectedFields, pubselected.SelectedField{
+					Name:     selField.Field.Name,
+					Selected: selectionToSelectedFields(selField.Sels),
+				})
+			}
+		}
+	}
+	return selectedFields
+}
+
 func execFieldSelection(ctx context.Context, r *Request, f *fieldToExec, path *pathSegment, applyLimiter bool) {
 	if applyLimiter {
 		r.Limiter <- struct{}{}
@@ -199,6 +218,9 @@ func execFieldSelection(ctx context.Context, r *Request, f *fieldToExec, path *p
 			}
 			if f.field.ArgsPacker != nil {
 				in = append(in, f.field.PackedArgs)
+			}
+			if f.field.HasSelected {
+				in = append(in, reflect.ValueOf(selectionToSelectedFields(f.sels)))
 			}
 			callOut := res.Method(f.field.MethodIndex).Call(in)
 			result = callOut[0]

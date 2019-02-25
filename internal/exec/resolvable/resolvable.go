@@ -9,6 +9,7 @@ import (
 	"github.com/graph-gophers/graphql-go/internal/common"
 	"github.com/graph-gophers/graphql-go/internal/exec/packer"
 	"github.com/graph-gophers/graphql-go/internal/schema"
+	pubselected "github.com/graph-gophers/graphql-go/selected"
 )
 
 type Schema struct {
@@ -36,6 +37,7 @@ type Field struct {
 	FieldIndex  int
 	HasContext  bool
 	HasError    bool
+	HasSelected bool
 	ArgsPacker  *packer.StructPacker
 	ValueExec   Resolvable
 	TraceLabel  string
@@ -281,6 +283,7 @@ func (b *execBuilder) makeObjectExec(typeName string, fields schema.FieldList, p
 }
 
 var contextType = reflect.TypeOf((*context.Context)(nil)).Elem()
+var selectedType = reflect.TypeOf([]pubselected.SelectedField(nil))
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
 
 func (b *execBuilder) makeFieldExec(typeName string, f *schema.Field, m reflect.Method, sf reflect.StructField,
@@ -289,6 +292,7 @@ func (b *execBuilder) makeFieldExec(typeName string, f *schema.Field, m reflect.
 	var argsPacker *packer.StructPacker
 	var hasError bool
 	var hasContext bool
+	var hasSelected bool
 
 	// Validate resolver method only when there is one
 	if methodIndex != -1 {
@@ -314,6 +318,11 @@ func (b *execBuilder) makeFieldExec(typeName string, f *schema.Field, m reflect.
 			if err != nil {
 				return nil, err
 			}
+			in = in[1:]
+		}
+
+		hasSelected = len(in) > 0 && in[0] == selectedType
+		if hasSelected {
 			in = in[1:]
 		}
 
@@ -344,6 +353,7 @@ func (b *execBuilder) makeFieldExec(typeName string, f *schema.Field, m reflect.
 		MethodIndex: methodIndex,
 		FieldIndex:  fieldIndex,
 		HasContext:  hasContext,
+		HasSelected: hasSelected,
 		ArgsPacker:  argsPacker,
 		HasError:    hasError,
 		TraceLabel:  fmt.Sprintf("GraphQL field: %s.%s", typeName, f.Name),
