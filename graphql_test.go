@@ -1,6 +1,7 @@
 package graphql_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -2926,7 +2927,7 @@ func TestInput(t *testing.T) {
 	})
 }
 
-type inputArgumentsHello struct {}
+type inputArgumentsHello struct{}
 
 type inputArgumentsScalarMismatch1 struct{}
 
@@ -2946,7 +2947,7 @@ type helloInputMismatch struct {
 	World string
 }
 
-func (r *inputArgumentsHello) Hello(args struct { Input *helloInput }) string {
+func (r *inputArgumentsHello) Hello(args struct{ Input *helloInput }) string {
 	return "Hello " + args.Input.Name + "!"
 }
 
@@ -2954,7 +2955,7 @@ func (r *inputArgumentsScalarMismatch1) Hello(name string) string {
 	return "Hello " + name + "!"
 }
 
-func (r *inputArgumentsScalarMismatch2) Hello(args struct { World string }) string {
+func (r *inputArgumentsScalarMismatch2) Hello(args struct{ World string }) string {
 	return "Hello " + args.World + "!"
 }
 
@@ -2962,11 +2963,11 @@ func (r *inputArgumentsObjectMismatch1) Hello(in helloInput) string {
 	return "Hello " + in.Name + "!"
 }
 
-func (r *inputArgumentsObjectMismatch2) Hello(args struct { Input *helloInputMismatch }) string {
+func (r *inputArgumentsObjectMismatch2) Hello(args struct{ Input *helloInputMismatch }) string {
 	return "Hello " + args.Input.World + "!"
 }
 
-func (r *inputArgumentsObjectMismatch3) Hello(args struct { Input *struct { Thing string } }) string {
+func (r *inputArgumentsObjectMismatch3) Hello(args struct{ Input *struct{ Thing string } }) string {
 	return "Hello " + args.Input.Thing + "!"
 }
 
@@ -3634,4 +3635,85 @@ func TestSubscriptions_In_Exec(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestOverlappingAlias(t *testing.T) {
+	query := `
+		{
+			hero(episode: EMPIRE) {
+				a: name
+				a: id
+			}
+		}
+	`
+	result := starwarsSchema.Exec(context.Background(), query, "", nil)
+	if len(result.Errors) == 0 {
+		t.Fatal("Expected error from overlapping alias")
+	}
+}
+
+// go test -bench=FragmentQueries -benchmem
+func BenchmarkFragmentQueries(b *testing.B) {
+	singleQuery := `
+		composed_%d: hero(episode: EMPIRE) {
+			name
+			...friendsNames
+			...friendsIds
+		}
+	`
+
+	queryTemplate := `
+		{
+			%s
+		}
+
+		fragment friendsNames on Character {
+			friends {
+				name
+			}
+		}
+
+		fragment friendsIds on Character {
+			friends {
+				id
+			}
+		}
+	`
+
+	testCases := []int{
+		1,
+		10,
+		100,
+		1000,
+		10000,
+	}
+
+	for _, c := range testCases {
+		// for each count, add a case for overlapping aliases vs non-overlapping aliases
+		for _, o := range []bool{true} {
+
+			var buffer bytes.Buffer
+			for i := 0; i < c; i++ {
+				idx := 0
+				if o {
+					idx = i
+				}
+				buffer.WriteString(fmt.Sprintf(singleQuery, idx))
+			}
+
+			query := fmt.Sprintf(queryTemplate, buffer.String())
+			a := "overlapping"
+			if o {
+				a = "non-overlapping"
+			}
+			b.Run(fmt.Sprintf("%d queries %s aliases", c, a), func(b *testing.B) {
+				for n := 0; n < b.N; n++ {
+					result := starwarsSchema.Exec(context.Background(), query, "", nil)
+					if len(result.Errors) != 0 {
+						b.Fatal(result.Errors[0])
+					}
+				}
+			})
+		}
+	}
 }
