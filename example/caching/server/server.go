@@ -9,6 +9,7 @@ import (
 	"github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/example/caching"
 	"github.com/graph-gophers/graphql-go/example/caching/cache"
+	"github.com/graph-gophers/graphql-go/types"
 )
 
 var schema *graphql.Schema
@@ -40,12 +41,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var hint *cache.Hint
 	if cacheable(r) {
 		ctx, hints, done := cache.Hintable(r.Context())
-		response = h.Schema.Exec(ctx, p.Query, p.OperationName, p.Variables)
+		response = h.Schema.Exec(ctx, p.Query, p.OperationName, p.Variables, map[string]types.DirectiveVisitor{})
 		done()
 		v := <-hints
 		hint = &v
 	} else {
-		response = h.Schema.Exec(r.Context(), p.Query, p.OperationName, p.Variables)
+		response = h.Schema.Exec(r.Context(), p.Query, p.OperationName, p.Variables, map[string]types.DirectiveVisitor{})
 	}
 	responseJSON, err := json.Marshal(response)
 	if err != nil {

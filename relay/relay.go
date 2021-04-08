@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	graphql "github.com/graph-gophers/graphql-go"
+	"github.com/graph-gophers/graphql-go/types"
 )
 
 func MarshalID(kind string, spec interface{}) graphql.ID {
@@ -58,7 +59,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := h.Schema.Exec(r.Context(), params.Query, params.OperationName, params.Variables)
+	response := h.Schema.Exec(r.Context(), params.Query, params.OperationName, params.Variables, map[string]types.DirectiveVisitor{})
 	responseJSON, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

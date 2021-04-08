@@ -186,14 +186,14 @@ func (s *Schema) ValidateWithVariables(queryString string, variables map[string]
 // Exec executes the given query with the schema's resolver. It panics if the schema was created
 // without a resolver. If the context get cancelled, no further resolvers will be called and a
 // the context error will be returned as soon as possible (not immediately).
-func (s *Schema) Exec(ctx context.Context, queryString string, operationName string, variables map[string]interface{}) *Response {
+func (s *Schema) Exec(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, visitors map[string]types.DirectiveVisitor) *Response {
 	if s.res.Resolver == (reflect.Value{}) {
 		panic("schema created without resolver, can not exec")
 	}
-	return s.exec(ctx, queryString, operationName, variables, s.res)
+	return s.exec(ctx, queryString, operationName, variables, visitors, s.res)
 }
 
-func (s *Schema) exec(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, res *resolvable.Schema) *Response {
+func (s *Schema) exec(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, visitors map[string]types.DirectiveVisitor, res *resolvable.Schema) *Response {
 	doc, qErr := query.Parse(queryString)
 	if qErr != nil {
 		return &Response{Errors: []*errors.QueryError{qErr}}
@@ -244,9 +244,10 @@ func (s *Schema) exec(ctx context.Context, queryString string, operationName str
 			Schema:               s.schema,
 			DisableIntrospection: s.disableIntrospection,
 		},
-		Limiter: make(chan struct{}, s.maxParallelism),
-		Tracer:  s.tracer,
-		Logger:  s.logger,
+		Limiter:  make(chan struct{}, s.maxParallelism),
+		Tracer:   s.tracer,
+		Logger:   s.logger,
+		Visitors: visitors,
 	}
 	varTypes := make(map[string]*introspection.Type)
 	for _, v := range op.Vars {
