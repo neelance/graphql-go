@@ -2228,7 +2228,7 @@ func TestIntrospection(t *testing.T) {
 					"b": {
 						"name": "Character",
 						"kind": "INTERFACE",
-						"interfaces": null,
+						"interfaces": [],
 						"possibleTypes": [
 							{
 								"name": "Human"
