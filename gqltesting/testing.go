@@ -12,18 +12,20 @@ import (
 
 	graphql "github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/errors"
+	"github.com/graph-gophers/graphql-go/types"
 )
 
 // Test is a GraphQL test case to be used with RunTest(s).
 type Test struct {
-	Context        context.Context
-	Schema         *graphql.Schema
-	Query          string
-	OperationName  string
-	Variables      map[string]interface{}
-	ExpectedResult string
-	ExpectedErrors []*errors.QueryError
-	RawResponse    bool
+	Context           context.Context
+	Schema            *graphql.Schema
+	Query             string
+	OperationName     string
+	Variables         map[string]interface{}
+	ExpectedResult    string
+	ExpectedErrors    []*errors.QueryError
+	RawResponse       bool
+	DirectiveVisitors map[string]types.DirectiveVisitor
 }
 
 // RunTests runs the given GraphQL test cases as subtests.
@@ -45,7 +47,7 @@ func RunTest(t *testing.T, test *Test) {
 	if test.Context == nil {
 		test.Context = context.Background()
 	}
-	result := test.Schema.Exec(test.Context, test.Query, test.OperationName, test.Variables)
+	result := test.Schema.Exec(test.Context, test.Query, test.OperationName, test.Variables, test.DirectiveVisitors)
 
 	checkErrors(t, test.ExpectedErrors, result.Errors)
 

@@ -11,6 +11,7 @@ import (
 	gqlerrors "github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/example/starwars"
 	"github.com/graph-gophers/graphql-go/gqltesting"
+	"github.com/graph-gophers/graphql-go/types"
 )
 
 type helloWorldResolver1 struct{}
@@ -43,6 +44,27 @@ func (r *helloSnakeResolver2) HelloHTML(ctx context.Context) (string, error) {
 
 func (r *helloSnakeResolver2) SayHello(ctx context.Context, args struct{ FullName string }) (string, error) {
 	return "Hello " + args.FullName + "!", nil
+}
+
+type customDirectiveVisitor struct {
+	beforeWasCalled bool
+}
+
+func (v *customDirectiveVisitor) Before(ctx context.Context, directive *types.Directive, input interface{}) error {
+	v.beforeWasCalled = true
+	return nil
+}
+
+func (v *customDirectiveVisitor) After(ctx context.Context, directive *types.Directive, output interface{}) (interface{}, error) {
+	if v.beforeWasCalled == false {
+		return nil, errors.New("Before directive visitor method wasn't called.")
+	}
+
+	if value, ok := directive.Arguments.Get("customAttribute"); ok {
+		return fmt.Sprintf("Directive '%s' (with arg '%s') modified result: %s", directive.Name.Name, value.String(), output.(string)), nil
+	} else {
+		return fmt.Sprintf("Directive '%s' modified result: %s", directive.Name.Name, output.(string)), nil
+	}
 }
 
 type theNumberResolver struct {
@@ -188,7 +210,6 @@ func TestHelloWorld(t *testing.T) {
 				}
 			`,
 		},
-
 		{
 			Schema: graphql.MustParseSchema(`
 				schema {
@@ -209,6 +230,67 @@ func TestHelloWorld(t *testing.T) {
 					"hello": "Hello world!"
 				}
 			`,
+		},
+	})
+}
+
+func TestCustomDirective(t *testing.T) {
+	t.Parallel()
+
+	gqltesting.RunTests(t, []*gqltesting.Test{
+		{
+			Schema: graphql.MustParseSchema(`
+				directive @customDirective on FIELD_DEFINITION
+
+				schema {
+					query: Query
+				}
+
+				type Query {
+					hello_html: String! @customDirective
+				}
+			`, &helloSnakeResolver1{}),
+			Query: `
+				{
+					hello_html
+				}
+			`,
+			ExpectedResult: `
+				{
+					"hello_html": "Directive 'customDirective' modified result: Hello snake!"
+				}
+			`,
+			DirectiveVisitors: map[string]types.DirectiveVisitor{
+				"customDirective": &customDirectiveVisitor{},
+			},
+		},
+		{
+			Schema: graphql.MustParseSchema(`
+				directive @customDirective(
+					customAttribute: String!
+			    ) on FIELD_DEFINITION
+
+				schema {
+					query: Query
+				}
+
+				type Query {
+					say_hello(full_name: String!): String! @customDirective(customAttribute: hi)
+				}
+			`, &helloSnakeResolver1{}),
+			Query: `
+				{
+					say_hello(full_name: "Johnny")
+				}
+			`,
+			ExpectedResult: `
+				{
+					"say_hello": "Directive 'customDirective' (with arg 'hi') modified result: Hello Johnny!"
+				}
+			`,
+			DirectiveVisitors: map[string]types.DirectiveVisitor{
+				"customDirective": &customDirectiveVisitor{},
+			},
 		},
 	})
 }
@@ -3728,7 +3810,7 @@ func TestSchema_Exec_without_resolver(t *testing.T) {
 					t.Fail()
 				}
 			}()
-			_ = s.Exec(context.Background(), tt.Args.Query, "", map[string]interface{}{})
+			_ = s.Exec(context.Background(), tt.Args.Query, "", map[string]interface{}{}, map[string]types.DirectiveVisitor{})
 		})
 	}
 }
