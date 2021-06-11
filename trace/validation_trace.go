@@ -6,7 +6,7 @@ import (
 	"github.com/graph-gophers/graphql-go/errors"
 )
 
-type TraceValidationFinishFunc = TraceQueryFinishFunc
+type TraceValidationFinishFunc TraceQueryFinishFunc
 
 // Deprecated: use ValidationTracerContext.
 type ValidationTracer interface {
