@@ -201,6 +201,8 @@ func makeScalarExec(t *types.ScalarTypeDefinition, resolverType reflect.Type) (R
 	switch r := reflect.New(resolverType).Interface().(type) {
 	case *int32:
 		implementsType = t.Name == "Int"
+	case *int64:
+		implementsType = t.Name == "Long"
 	case *float64:
 		implementsType = t.Name == "Float"
 	case *string:
