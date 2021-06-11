@@ -17,6 +17,7 @@ import (
 	"github.com/graph-gophers/graphql-go/internal/validation"
 	"github.com/graph-gophers/graphql-go/introspection"
 	"github.com/graph-gophers/graphql-go/log"
+	"github.com/graph-gophers/graphql-go/selection"
 	"github.com/graph-gophers/graphql-go/trace"
 	"github.com/graph-gophers/graphql-go/types"
 )
@@ -166,6 +167,12 @@ type Response struct {
 	Errors     []*errors.QueryError   `json:"errors,omitempty"`
 	Data       json.RawMessage        `json:"data,omitempty"`
 	Extensions map[string]interface{} `json:"extensions,omitempty"`
+}
+
+// SelectedFieldsFromContext retrieves the selected fields passed via the context during the request
+// execution
+func SelectedFieldsFromContext(ctx context.Context) []*selection.SelectedField {
+	return exec.SelectedFieldsFromContext(ctx)
 }
 
 // Validate validates the given query with the schema.
